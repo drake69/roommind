@@ -652,6 +652,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             learned_matrix, learned_slot_minutes = await self._get_learned_prior_matrix(
                 room["learned_occupancy_area_id"]
             )
+            if learned_matrix is not None:
+                _LOGGER.debug(
+                    "room %s: consuming learned-occupancy prior (area=%s, %d slots)",
+                    room.get("area_id"),
+                    room["learned_occupancy_area_id"],
+                    len(learned_matrix),
+                )
 
         # Determine dual heat/cool target temperatures
         # Returns TargetTemps(heat, cool). None values mean "force off".
@@ -1618,6 +1625,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     err,
                 )
                 result = None
+        if isinstance(result, dict):
+            _LOGGER.debug(
+                "learned occupancy: fetched get_time_priors (%d areas)",
+                len(result.get("areas", {})),
+            )
         self._learned_priors_cache = result
         self._learned_priors_cache_ts = now
         return result
