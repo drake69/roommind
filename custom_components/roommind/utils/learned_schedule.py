@@ -39,7 +39,8 @@ def build_prior_matrix(response: dict | None, area_id: str) -> tuple[dict[tuple[
     Returns ``(matrix, slot_minutes)`` where ``matrix`` maps
     ``(day_of_week, time_slot)`` to the learned prior, or ``(None, 60)`` when the
     response is missing/empty or the area is not present — callers then fall back
-    to the manual schedule.
+    to the manual schedule. Slots the area has never observed are dropped, so an
+    area-level fallback value can never be read as evidence.
     """
     if not isinstance(response, dict):
         return None, 60
@@ -49,8 +50,23 @@ def build_prior_matrix(response: dict | None, area_id: str) -> tuple[dict[tuple[
         if not isinstance(area, dict) or area.get("area_id") != area_id:
             continue
         slot_minutes = int(area.get("slot_minutes", default_slot_minutes) or default_slot_minutes)
+        # ``slots_raw`` is the learned per-slot prior on its own. ``slots`` blends it
+        # with the area's global prior in logit space, which compresses the range so
+        # far that an absolute threshold stops being meaningful for a room occupied
+        # only a few hours a day. ``slots`` stays the fallback for an Area Occupancy
+        # build that predates ``slots_raw``.
+        slots = area.get("slots_raw") or area.get("slots") or {}
+        # ``data_points`` counts the observations behind each slot; 0 means the slot
+        # was never seen and its value is an area-level fallback, not evidence.
+        # Dropping those stops a fallback from crossing the threshold on its own: in
+        # a room whose global prior sits above the threshold, every unobserved slot
+        # would otherwise read as comfort. If nothing survives, the matrix is empty
+        # and the room reverts to its manual schedule.
+        observations = area.get("data_points") or {}
         matrix: dict[tuple[int, int], float] = {}
-        for key, value in (area.get("slots") or {}).items():
+        for key, value in slots.items():
+            if observations and not observations.get(key):
+                continue
             try:
                 day_str, slot_str = str(key).split(",")
                 matrix[(int(day_str), int(slot_str))] = float(value)

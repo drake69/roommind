@@ -65,6 +65,60 @@ def test_build_prior_matrix_empty_slots_returns_none():
     assert matrix is None
 
 
+def test_build_prior_matrix_prefers_raw_slots_over_combined():
+    # ``slots`` is the combined prior (blended with the area's global prior in
+    # logit space); the raw per-slot prior is the anticipatory signal we want.
+    resp = {
+        "areas": {
+            "a": {
+                "area_id": "soggiorno",
+                "slots": {"0,8": 0.12},
+                "slots_raw": {"0,8": 0.71},
+            }
+        }
+    }
+    matrix, _ = build_prior_matrix(resp, "soggiorno")
+    assert matrix == {(0, 8): 0.71}
+
+
+def test_build_prior_matrix_falls_back_to_combined_without_raw():
+    # An Area Occupancy build that predates ``slots_raw`` still works.
+    resp = {"areas": {"a": {"area_id": "soggiorno", "slots": {"0,8": 0.12}}}}
+    matrix, _ = build_prior_matrix(resp, "soggiorno")
+    assert matrix == {(0, 8): 0.12}
+
+
+def test_build_prior_matrix_drops_never_observed_slots():
+    # data_points == 0 marks a slot whose value is an area-level fallback, not
+    # evidence — it must not be able to cross the comfort threshold.
+    resp = {
+        "areas": {
+            "a": {
+                "area_id": "soggiorno",
+                "slots_raw": {"0,8": 0.71, "0,9": 0.66},
+                "data_points": {"0,8": 4, "0,9": 0},
+            }
+        }
+    }
+    matrix, _ = build_prior_matrix(resp, "soggiorno")
+    assert matrix == {(0, 8): 0.71}
+
+
+def test_build_prior_matrix_all_slots_unobserved_returns_none():
+    # A room that has learned nothing yet reverts to its manual schedule.
+    resp = {
+        "areas": {
+            "a": {
+                "area_id": "soggiorno",
+                "slots_raw": {"0,8": 0.66, "0,9": 0.66},
+                "data_points": {"0,8": 0, "0,9": 0},
+            }
+        }
+    }
+    matrix, _ = build_prior_matrix(resp, "soggiorno")
+    assert matrix is None
+
+
 # --- prior_at -----------------------------------------------------------------
 
 
